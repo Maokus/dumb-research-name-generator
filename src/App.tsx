@@ -187,44 +187,34 @@ function App() {
   // Format a near-match word so that only the letters that match the title initials
   // (as a subsequence, left-to-right) are capitalised; others are lowercase.
   function formatNearMatchWord(word: string, initials: string | undefined) {
-    if (!initials) return word
-    const w = word.split('')
-    const low = word.toLowerCase()
+    if (!initials || initials.length === 0) {
+      return <span className="near-formatted">{word.toLowerCase()}</span>
+    }
+
     const init = initials.toLowerCase()
-    const matched = new Set<number>()
+    let initPointer = 0
 
-    let prog = 0;
-    const result = [];
-    let found = false;
-    for (const char of w) {
-      found = false;
-      for (let i = prog; i < initials.length; i++) {
-        if (initials[i] == char) {
-          result.push(initials[i].toUpperCase())
-          prog = i;
-          found = true;
-        }
-      }
-      if (!found) {
-        result.push(char.toLowerCase());
-      }
-    }
+    const formattedLetters = word.split('').map((char, index) => {
+      const lowerChar = char.toLowerCase()
+      const matchesInitial = initPointer < init.length && lowerChar === init[initPointer]
 
-    return result.join("");
-
-    let ti = 0
-    for (let i = 0; i < low.length && ti < init.length; i++) {
-      if (low[i] === init[ti]) {
-        matched.add(i)
-        ti++
+      if (matchesInitial) {
+        initPointer++
       }
-    }
+
+      return (
+        <span
+          key={`${word}-${index}`}
+          className={`near-letter`}
+        >
+          {matchesInitial ? lowerChar.toUpperCase() : lowerChar}
+        </span>
+      )
+    })
 
     return (
       <span className="near-formatted">
-        {w.map((ch, i) => (
-          <span key={i}>{matched.has(i) ? ch.toUpperCase() : ch.toLowerCase()}</span>
-        ))}
+        {formattedLetters}
       </span>
     )
   }
@@ -330,7 +320,13 @@ function App() {
         <div className="selected-preview">
           <h3>
             Your World-changing Research Title: <strong>{selectedWord.type === 'near' ? formatNearMatchWord(selectedWord.word, results.titleInfo?.initials) : selectedWord.word.toUpperCase()}</strong>
-            <NicenessScore score={selectedWord.niceness} type={selectedWord.type} />
+            {selectedWord.type === 'near' ? (
+              <span className="edit-distance-badge">
+                ~{selectedWord.editDistance ?? '?'} edit{selectedWord.editDistance === 1 ? '' : 's'}
+              </span>
+            ) : (
+              <NicenessScore score={selectedWord.niceness} type={selectedWord.type} />
+            )}
           </h3>
           <MatchTypeBadge
             type={selectedWord.type}
@@ -396,7 +392,13 @@ function App() {
                 >
                   <div className="word-header">
                     <span className="word">{match.type === 'near' ? formatNearMatchWord(match.word, results.titleInfo?.initials) : match.word}</span>
-                    <NicenessScore score={match.niceness} type={match.type} />
+                    {match.type === 'near' ? (
+                      <span className="edit-distance-badge">
+                        ~{match.editDistance ?? '?'} edit{match.editDistance === 1 ? '' : 's'}
+                      </span>
+                    ) : (
+                      <NicenessScore score={match.niceness} type={match.type} />
+                    )}
                   </div>
                   <span className="length">{match.word.length} letters</span>
                   <MatchTypeBadge

@@ -242,6 +242,7 @@ export function findCompoundWords(
 export function findNearMatches(
     titleInfo: TitleInfo,
     allWords: string[],
+    wordSet: Set<string>,
     maxEditDistance: number = 2,
     maxResults: number = 50
 ): WordMatch[] {
@@ -260,6 +261,7 @@ export function findNearMatches(
         if (word.length < minLen || word.length > maxLen) continue
 
         const wordLower = word.toLowerCase()
+        if (!wordSet.has(wordLower)) continue
 
         // Calculate edit distance to the initials
         const distance = editDistance(wordLower, initials)
@@ -269,22 +271,6 @@ export function findNearMatches(
             // Check it's not already an exact match in the title
             const exactIndices = findWordInTitle(titleInfo, word)
             if (exactIndices) continue // Skip if it's an exact match
-
-            // Calculate a niceness score based on how close it is to initials
-            // Prefer words that start with the same letter as the initials
-            let closeness = 1 - (distance / (maxEditDistance + 1))
-
-            // Bonus for matching the first letter
-            if (wordLower[0] === initials[0]) {
-                closeness += 0.2
-            }
-
-            // Bonus for containing the initials as a subsequence
-            if (containsSubsequence(wordLower, initials)) {
-                closeness += 0.3
-            }
-
-            const niceness = Math.min(closeness, 1) * 50 // Max 50 for near matches
 
             // Map matched initials to original title indices so we can highlight
             // which letters from the title contributed to this near match.
@@ -308,7 +294,7 @@ export function findNearMatches(
             results.push({
                 word,
                 indices: matchedInitialIndices,
-                niceness: Math.round(niceness * 100) / 100,
+                niceness: 0,
                 type: 'near',
                 editDistance: distance
             })
@@ -317,18 +303,14 @@ export function findNearMatches(
         if (results.length >= maxResults * 2) break // Get more, then sort and trim
     }
 
-    return results.sort((a, b) => b.niceness - a.niceness).slice(0, maxResults)
-}
-
-// Check if target is a subsequence of source
-function containsSubsequence(source: string, target: string): boolean {
-    let ti = 0
-    for (let si = 0; si < source.length && ti < target.length; si++) {
-        if (source[si] === target[ti]) {
-            ti++
-        }
-    }
-    return ti === target.length
+    return results
+        .sort((a, b) => {
+            if (a.editDistance !== b.editDistance) {
+                return (a.editDistance ?? Infinity) - (b.editDistance ?? Infinity)
+            }
+            return a.word.localeCompare(b.word)
+        })
+        .slice(0, maxResults)
 }
 
 // Main function to find all matches
@@ -390,7 +372,7 @@ export function findAllMatches(
 
     // Find near matches if enabled
     const near = includeNearMatches
-        ? findNearMatches(titleInfo, allWords, 2, Math.floor(maxResults / 2))
+        ? findNearMatches(titleInfo, allWords, wordSet, 2, Math.floor(maxResults / 2))
         : []
 
     return { exact, compound, near }
