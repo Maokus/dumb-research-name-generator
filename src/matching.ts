@@ -3,9 +3,8 @@ export interface WordMatch {
     word: string
     indices: number[]
     niceness: number
-    type: 'exact' | 'compound' | 'near'
+    type: 'exact' | 'compound'
     components?: string[] // For compound words
-    editDistance?: number // For near matches
 }
 
 export interface TitleInfo {
@@ -101,7 +100,18 @@ export function calculateNiceness(titleInfo: TitleInfo, word: string, indices: n
     const wordLen = word.length
 
     // Convert original indices to letter indices for easier calculation
-    const letterIndices = indices.map(origIdx => titleInfo.letterPositions.indexOf(origIdx))
+    const letterIndices = indices
+        .map(origIdx => titleInfo.letterPositions.indexOf(origIdx))
+        .filter(i => i >= 0)
+
+    // 0. Strong bonus for using the first letter of the first word (0 or 25 points)
+    // (Pick a value that feels "significant" relative to your other weights.)
+    if (titleInfo.words.length > 0) {
+        const firstWordFirstLetter = titleInfo.words[0].letterStartIndex
+        if (letterIndices.includes(firstWordFirstLetter)) {
+            score += 25
+        }
+    }
 
     // 1. Word coverage: prefer using letters from ALL words in the title (0-40 points)
     const wordsUsed = new Set<number>()
@@ -114,7 +124,7 @@ export function calculateNiceness(titleInfo: TitleInfo, word: string, indices: n
             }
         }
     }
-    const wordCoverage = wordsUsed.size / titleInfo.words.length
+    const wordCoverage = titleInfo.words.length > 0 ? wordsUsed.size / titleInfo.words.length : 0
     score += wordCoverage * 40
 
     // 2. Start letter usage: prefer letters from the start of title words (0-30 points)
@@ -125,14 +135,15 @@ export function calculateNiceness(titleInfo: TitleInfo, word: string, indices: n
             if (letterIdx >= tw.letterStartIndex && letterIdx < tw.letterEndIndex) {
                 const posInWord = letterIdx - tw.letterStartIndex
                 const wordLength = tw.letterEndIndex - tw.letterStartIndex
-                // Score based on position: first letter = 1.0, last = 0
-                const posScore = 1 - (posInWord / wordLength)
+                // Score based on position: first letter = 1.0, last ~ 0
+                const denom = Math.max(wordLength - 1, 1)
+                const posScore = 1 - (posInWord / denom)
                 startLetterScore += posScore
                 break
             }
         }
     }
-    score += (startLetterScore / wordLen) * 30
+    score += (startLetterScore / Math.max(wordLen, 1)) * 30
 
     // 3. Initial matching: bonus if word starts with initials (0-20 points)
     const wordLower = word.toLowerCase()
@@ -144,7 +155,7 @@ export function calculateNiceness(titleInfo: TitleInfo, word: string, indices: n
             break
         }
     }
-    if (initialsMatched > 0) {
+    if (initialsMatched > 0 && titleInfo.initials.length > 0) {
         score += (initialsMatched / titleInfo.initials.length) * 20
     }
 
@@ -155,163 +166,77 @@ export function calculateNiceness(titleInfo: TitleInfo, word: string, indices: n
     return Math.round(score * 100) / 100
 }
 
-// Calculate edit distance (Levenshtein distance) between two strings
-export function editDistance(a: string, b: string): number {
-    const m = a.length
-    const n = b.length
 
-    // Use single array optimization for space efficiency
-    const prev = new Array(n + 1)
-    const curr = new Array(n + 1)
-
-    for (let j = 0; j <= n; j++) {
-        prev[j] = j
-    }
-
-    for (let i = 1; i <= m; i++) {
-        curr[0] = i
-        for (let j = 1; j <= n; j++) {
-            if (a[i - 1] === b[j - 1]) {
-                curr[j] = prev[j - 1]
-            } else {
-                curr[j] = 1 + Math.min(prev[j - 1], prev[j], curr[j - 1])
-            }
-        }
-        for (let j = 0; j <= n; j++) {
-            prev[j] = curr[j]
-        }
-    }
-
-    return prev[n]
-}
 
 // Build a Set of valid words for O(1) lookup
 export function buildWordSet(words: string[]): Set<string> {
     return new Set(words.map(w => w.toLowerCase()))
 }
 
-// Find compound words (two words stuck together)
-export function findCompoundWords(
+// Build new compound matches by stitching together two exact matches
+function generateCompoundMatches(
     titleInfo: TitleInfo,
+    exactMatches: WordMatch[],
     wordSet: Set<string>,
-    allWords: string[],
+    searchLower: string,
+    minWordLength: number,
+    maxResults: number,
     minComponentLength: number = 3,
-    maxResults: number = 50
+    componentPoolSize: number = 80
 ): WordMatch[] {
-    const results: WordMatch[] = []
+    if (maxResults <= 0) return []
+
+    const usableMatches = exactMatches.filter(match => match.word.length >= minComponentLength)
+    if (usableMatches.length < 2) return []
+
+    const componentPool = usableMatches.slice(0, componentPoolSize)
     const seen = new Set<string>()
+    const compounds: WordMatch[] = []
+    const maxCandidates = Math.max(maxResults * 3, componentPool.length)
 
-    // Strategy: For each word, check if it can be split into two valid words
-    // Only check words that could potentially be formed from the title
-    for (const word of allWords) {
-        if (word.length < minComponentLength * 2) continue
-        if (word.length > titleInfo.letters.length) continue
+    for (let i = 0; i < componentPool.length; i++) {
+        const first = componentPool[i]
+        for (let j = 0; j < componentPool.length; j++) {
+            if (i === j) continue
 
-        // Try to find this word in the title first
-        const indices = findWordInTitle(titleInfo, word)
-        if (!indices) continue
+            const second = componentPool[j]
+            const combinedWord = first.word + second.word
 
-        // Now check if this word is a compound of two words
-        for (let splitPoint = minComponentLength; splitPoint <= word.length - minComponentLength; splitPoint++) {
-            const part1 = word.slice(0, splitPoint)
-            const part2 = word.slice(splitPoint)
+            if (combinedWord.length < minWordLength) continue
+            if (combinedWord.length > titleInfo.letters.length) continue
+            if (searchLower && !combinedWord.includes(searchLower)) continue
+            if (wordSet.has(combinedWord)) continue // Already a standalone dictionary word
+            if (seen.has(combinedWord)) continue
 
-            if (wordSet.has(part1) && wordSet.has(part2)) {
-                if (seen.has(word)) continue
-                seen.add(word)
+            const indices = findWordInTitle(titleInfo, combinedWord)
+            if (!indices) continue
 
-                const niceness = calculateNiceness(titleInfo, word, indices) * 0.8 // Slight penalty for compounds
-                results.push({
-                    word,
-                    indices,
-                    niceness,
-                    type: 'compound',
-                    components: [part1, part2]
-                })
-                break // Found one valid split, move on
-            }
-        }
+            const niceness = calculateNiceness(titleInfo, combinedWord, indices) * 0.9 // gentle penalty for fabricated words
 
-        if (results.length >= maxResults) break
-    }
-
-    return results.sort((a, b) => b.niceness - a.niceness)
-}
-
-// Find near matches - words close to the initials/acronym
-export function findNearMatches(
-    titleInfo: TitleInfo,
-    allWords: string[],
-    wordSet: Set<string>,
-    maxEditDistance: number = 2,
-    maxResults: number = 50
-): WordMatch[] {
-    const results: WordMatch[] = []
-    const initials = titleInfo.initials.toLowerCase()
-
-    if (initials.length < 2) return results
-
-    // Look for words that are close to the initials
-    // Also try matching words where initials appear as a subsequence
-    // This helps find words like "CLINCH" for "CINCH" (C-I-N-C-H as subsequence)
-    const minLen = Math.max(2, initials.length - maxEditDistance)
-    const maxLen = initials.length + maxEditDistance + 2 // Allow slightly longer for insertions
-
-    for (const word of allWords) {
-        if (word.length < minLen || word.length > maxLen) continue
-
-        const wordLower = word.toLowerCase()
-        if (!wordSet.has(wordLower)) continue
-
-        // Calculate edit distance to the initials
-        const distance = editDistance(wordLower, initials)
-
-        // Only consider if edit distance is reasonable and word is not an exact subsequence
-        if (distance > 0 && distance <= maxEditDistance) {
-            // Check it's not already an exact match in the title
-            const exactIndices = findWordInTitle(titleInfo, word)
-            if (exactIndices) continue // Skip if it's an exact match
-
-            // Map matched initials to original title indices so we can highlight
-            // which letters from the title contributed to this near match.
-            const matchedInitialIndices: number[] = []
-            // Walk through the word and try to match initials (as subsequence)
-            let wi = 0
-            for (let ii = 0; ii < initials.length && wi < wordLower.length; ii++) {
-                for (; wi < wordLower.length; wi++) {
-                    if (wordLower[wi] === initials[ii]) {
-                        // Use the original index of the first character of the title word
-                        // corresponding to this initial
-                        if (titleInfo.words[ii]) {
-                            matchedInitialIndices.push(titleInfo.words[ii].startIndex)
-                        }
-                        wi++
-                        break
-                    }
-                }
-            }
-
-            results.push({
-                word,
-                indices: matchedInitialIndices,
-                niceness: 0,
-                type: 'near',
-                editDistance: distance
+            compounds.push({
+                word: combinedWord,
+                indices,
+                niceness: Math.round(niceness * 100) / 100,
+                type: 'compound',
+                components: [first.word, second.word]
             })
+            seen.add(combinedWord)
+
+            if (compounds.length >= maxCandidates) break
         }
 
-        if (results.length >= maxResults * 2) break // Get more, then sort and trim
+        if (compounds.length >= maxCandidates) break
     }
 
-    return results
+    return compounds
         .sort((a, b) => {
-            if (a.editDistance !== b.editDistance) {
-                return (a.editDistance ?? Infinity) - (b.editDistance ?? Infinity)
-            }
+            if (b.niceness !== a.niceness) return b.niceness - a.niceness
+            if (b.word.length !== a.word.length) return b.word.length - a.word.length
             return a.word.localeCompare(b.word)
         })
         .slice(0, maxResults)
 }
+
 
 // Main function to find all matches
 export function findAllMatches(
@@ -323,28 +248,24 @@ export function findAllMatches(
         maxResults: number
         searchTerm: string
         includeCompounds: boolean
-        includeNearMatches: boolean
     }
 ): {
     exact: WordMatch[]
     compound: WordMatch[]
-    near: WordMatch[]
 } {
-    const { minLength, maxResults, searchTerm, includeCompounds, includeNearMatches } = options
-
-    // Find exact matches
-    const exactMatches: WordMatch[] = []
-    const searchLower = searchTerm.toLowerCase()
+    const { minLength, maxResults, searchTerm, includeCompounds } = options
+    const searchLower = searchTerm.trim().toLowerCase()
+    const allExactMatches: WordMatch[] = []
 
     for (const word of allWords) {
         if (word.length < minLength) continue
         if (word.length > titleInfo.letters.length) continue
-        if (searchTerm && !word.includes(searchLower)) continue
+        if (searchLower && !word.includes(searchLower)) continue
 
         const indices = findWordInTitle(titleInfo, word)
         if (indices) {
             const niceness = calculateNiceness(titleInfo, word, indices)
-            exactMatches.push({
+            allExactMatches.push({
                 word,
                 indices,
                 niceness,
@@ -354,26 +275,31 @@ export function findAllMatches(
     }
 
     // Sort by niceness (descending), then by length (descending), then alphabetically
-    exactMatches.sort((a, b) => {
+    allExactMatches.sort((a, b) => {
         if (b.niceness !== a.niceness) return b.niceness - a.niceness
         if (b.word.length !== a.word.length) return b.word.length - a.word.length
         return a.word.localeCompare(b.word)
     })
 
-    const exact = exactMatches.slice(0, maxResults)
+    const exact = allExactMatches.slice(0, maxResults)
     const exactWordSet = new Set(exact.map(m => m.word))
 
     // Find compound words if enabled (exclude words already in exact matches)
     let compound: WordMatch[] = []
     if (includeCompounds) {
-        const allCompounds = findCompoundWords(titleInfo, wordSet, allWords, 3, maxResults)
-        compound = allCompounds.filter(c => !exactWordSet.has(c.word)).slice(0, Math.floor(maxResults / 2))
+        const compoundLimit = Math.max(1, Math.floor(maxResults / 2))
+        const minComponentLength = Math.max(2, Math.min(4, minLength))
+        const generated = generateCompoundMatches(
+            titleInfo,
+            allExactMatches,
+            wordSet,
+            searchLower,
+            minLength,
+            compoundLimit,
+            minComponentLength
+        )
+        compound = generated.filter(c => !exactWordSet.has(c.word))
     }
 
-    // Find near matches if enabled
-    const near = includeNearMatches
-        ? findNearMatches(titleInfo, allWords, wordSet, 2, Math.floor(maxResults / 2))
-        : []
-
-    return { exact, compound, near }
+    return { exact, compound }
 }

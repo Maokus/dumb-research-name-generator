@@ -23,9 +23,8 @@ function HighlightedTitle({ title, indices }: { title: string; indices: number[]
 }
 
 // Format niceness score for display
-function NicenessScore({ score, type }: { score: number; type: WordMatch['type'] }) {
+function NicenessScore({ score }: { score: number }) {
   const getScoreClass = () => {
-    if (type === 'near') return 'score-near'
     if (score >= 60) return 'score-high'
     if (score >= 40) return 'score-medium'
     return 'score-low'
@@ -39,25 +38,16 @@ function NicenessScore({ score, type }: { score: number; type: WordMatch['type']
 }
 
 // Match type badge
-function MatchTypeBadge({ type, components, editDistance }: {
+function MatchTypeBadge({ type, components }: {
   type: WordMatch['type']
   components?: string[]
-  editDistance?: number
 }) {
   if (type === 'exact') return null
 
-  if (type === 'compound' && components) {
+  if (type === 'compound' && components && components.length > 0) {
     return (
       <span className="match-badge compound">
-        {components[0]} + {components[1]}
-      </span>
-    )
-  }
-
-  if (type === 'near' && editDistance !== undefined) {
-    return (
-      <span className="match-badge near">
-        ~{editDistance} edit{editDistance !== 1 ? 's' : ''}
+        {components.join(' + ')}
       </span>
     )
   }
@@ -68,7 +58,6 @@ function MatchTypeBadge({ type, components, editDistance }: {
 interface SearchResults {
   exact: WordMatch[]
   compound: WordMatch[]
-  near: WordMatch[]
   titleInfo: TitleInfo | null
   searchedTitle: string
 }
@@ -84,13 +73,11 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedWord, setSelectedWord] = useState<WordMatch | null>(null)
   const [includeCompounds, setIncludeCompounds] = useState(true)
-  const [includeNearMatches, setIncludeNearMatches] = useState(true)
-  const [activeTab, setActiveTab] = useState<'exact' | 'compound' | 'near'>('exact')
+  const [activeTab, setActiveTab] = useState<'exact' | 'compound'>('exact')
 
   const [results, setResults] = useState<SearchResults>({
     exact: [],
     compound: [],
-    near: [],
     titleInfo: null,
     searchedTitle: ''
   })
@@ -117,7 +104,6 @@ function App() {
       setResults({
         exact: [],
         compound: [],
-        near: [],
         titleInfo: null,
         searchedTitle: ''
       })
@@ -131,7 +117,7 @@ function App() {
     setTimeout(() => {
       const titleInfo = analyzeTitleTitle(title)
 
-      const { exact, compound, near } = findAllMatches(
+      const { exact, compound } = findAllMatches(
         titleInfo,
         words,
         wordSet,
@@ -139,15 +125,13 @@ function App() {
           minLength,
           maxResults,
           searchTerm,
-          includeCompounds,
-          includeNearMatches
+          includeCompounds
         }
       )
 
       setResults({
         exact,
         compound,
-        near,
         titleInfo,
         searchedTitle: title
       })
@@ -158,11 +142,9 @@ function App() {
         setActiveTab('exact')
       } else if (compound.length > 0) {
         setActiveTab('compound')
-      } else if (near.length > 0) {
-        setActiveTab('near')
       }
     }, 10)
-  }, [title, words, wordSet, minLength, maxResults, searchTerm, includeCompounds, includeNearMatches])
+  }, [title, words, wordSet, minLength, maxResults, searchTerm, includeCompounds])
 
   // Handle Enter key
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -177,52 +159,13 @@ function App() {
 
   // Get the current tab's matches
   const currentMatches = useMemo(() => {
-    switch (activeTab) {
-      case 'exact': return results.exact
-      case 'compound': return results.compound
-      case 'near': return results.near
-    }
+    return activeTab === 'exact' ? results.exact : results.compound
   }, [activeTab, results])
-
-  // Format a near-match word so that only the letters that match the title initials
-  // (as a subsequence, left-to-right) are capitalised; others are lowercase.
-  function formatNearMatchWord(word: string, initials: string | undefined) {
-    if (!initials || initials.length === 0) {
-      return <span className="near-formatted">{word.toLowerCase()}</span>
-    }
-
-    const init = initials.toLowerCase()
-    let initPointer = 0
-
-    const formattedLetters = word.split('').map((char, index) => {
-      const lowerChar = char.toLowerCase()
-      const matchesInitial = initPointer < init.length && lowerChar === init[initPointer]
-
-      if (matchesInitial) {
-        initPointer++
-      }
-
-      return (
-        <span
-          key={`${word}-${index}`}
-          className={`near-letter`}
-        >
-          {matchesInitial ? lowerChar.toUpperCase() : lowerChar}
-        </span>
-      )
-    })
-
-    return (
-      <span className="near-formatted">
-        {formattedLetters}
-      </span>
-    )
-  }
 
   if (loading) {
     return (
       <div className="app">
-        <h1>Research Name Generator</h1>
+        <h1>DURANGO: DUmb ReseArch Name GeneratOr</h1>
         <p>Loading dictionary ({words.length > 0 ? words.length.toLocaleString() : '...'} words)...</p>
       </div>
     )
@@ -230,9 +173,9 @@ function App() {
 
   return (
     <div className="app">
-      <h1>Research Name Generator</h1>
+      <h1>DURANGO: DUmb ReseArch Name GeneratOr</h1>
       <p className="subtitle">
-        Create those dumb research project names • Ranked by "niceness"
+        Create those dumb research project names • Ranked by "niceness" • Loved by CS Researchers
       </p>
 
       <div className="input-section">
@@ -244,7 +187,7 @@ function App() {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Enter your project title..."
+            placeholder="Enter your project subtitle..."
             className="title-input"
           />
           <button
@@ -305,42 +248,22 @@ function App() {
             />
             Compound words
           </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={includeNearMatches}
-              onChange={(e) => setIncludeNearMatches(e.target.checked)}
-            />
-            Near matches
-          </label>
         </div>
       </div>
 
       {selectedWord && results.titleInfo && (
         <div className="selected-preview">
           <h3>
-            Your World-changing Research Title: <strong>{selectedWord.type === 'near' ? formatNearMatchWord(selectedWord.word, results.titleInfo?.initials) : selectedWord.word.toUpperCase()}</strong>
-            {selectedWord.type === 'near' ? (
-              <span className="edit-distance-badge">
-                ~{selectedWord.editDistance ?? '?'} edit{selectedWord.editDistance === 1 ? '' : 's'}
-              </span>
-            ) : (
-              <NicenessScore score={selectedWord.niceness} type={selectedWord.type} />
-            )}
+            Your World-changing Research Title: <strong>{selectedWord.word.toUpperCase()}</strong>
+            <NicenessScore score={selectedWord.niceness} />
           </h3>
           <MatchTypeBadge
             type={selectedWord.type}
             components={selectedWord.components}
-            editDistance={selectedWord.editDistance}
           />
           {selectedWord.indices && selectedWord.indices.length > 0 && (
             <div className="preview-title">
               <HighlightedTitle title={results.searchedTitle} indices={selectedWord.indices} />
-            </div>
-          )}
-          {selectedWord.type === 'near' && (
-            <div className="near-match-info">
-              <p>Near match for initials: <strong>{results.titleInfo.initials.toUpperCase()}</strong></p>
             </div>
           )}
         </div>
@@ -362,13 +285,6 @@ function App() {
             >
               Compound ({results.compound.length})
             </button>
-            <button
-              className={`tab ${activeTab === 'near' ? 'active' : ''}`}
-              onClick={() => setActiveTab('near')}
-              disabled={!includeNearMatches}
-            >
-              Near ({results.near.length})
-            </button>
           </div>
 
           <h2>
@@ -380,7 +296,6 @@ function App() {
             <p className="no-results">
               {activeTab === 'exact' && 'No exact matches found. Try a longer title or lower minimum length.'}
               {activeTab === 'compound' && 'No compound words found.'}
-              {activeTab === 'near' && 'No near matches found for the initials.'}
             </p>
           ) : (
             <div className="word-grid">
@@ -391,20 +306,13 @@ function App() {
                   onClick={() => handleWordClick(match)}
                 >
                   <div className="word-header">
-                    <span className="word">{match.type === 'near' ? formatNearMatchWord(match.word, results.titleInfo?.initials) : match.word}</span>
-                    {match.type === 'near' ? (
-                      <span className="edit-distance-badge">
-                        ~{match.editDistance ?? '?'} edit{match.editDistance === 1 ? '' : 's'}
-                      </span>
-                    ) : (
-                      <NicenessScore score={match.niceness} type={match.type} />
-                    )}
+                    <span className="word">{match.word}</span>
+                    <NicenessScore score={match.niceness} />
                   </div>
                   <span className="length">{match.word.length} letters</span>
                   <MatchTypeBadge
                     type={match.type}
                     components={match.components}
-                    editDistance={match.editDistance}
                   />
                 </button>
               ))}
