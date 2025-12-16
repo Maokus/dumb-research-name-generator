@@ -180,7 +180,6 @@ h1 {
 }
 
 .selected-preview strong {
-  font-size: 1.4rem;
   background: var(--accent-yellow);
   padding: 0.05rem 0.4rem;
   border: 2px solid var(--ink);
@@ -190,6 +189,19 @@ h1 {
   font-size: 1.8rem;
   font-weight: 800;
   letter-spacing: 0.08em;
+}
+
+.preview-niceness {
+  text-align: right;
+}
+
+.credits {
+  position: fixed;
+  outline: 3px solid black;
+  background: var(--paper);
+  padding: 0.5rem;
+  bottom: 1rem;
+  right:1rem;
 }
 
 .highlighted-title .highlight {

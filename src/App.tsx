@@ -8,11 +8,12 @@ import {
 } from './matching'
 
 // Highlight the matched characters in the title
-function HighlightedTitle({ title, indices }: { title: string; indices: number[] }) {
+function HighlightedTitle({ name, title, indices }: { name: string; title: string; indices: number[] }) {
   const indexSet = new Set(indices)
 
   return (
     <span className="highlighted-title">
+      <strong>{name}</strong>:{" "}
       {title.split('').map((char, i) => (
         <span key={i} className={indexSet.has(i) ? 'highlight' : ''}>
           {char}
@@ -254,8 +255,7 @@ function App() {
       {selectedWord && results.titleInfo && (
         <div className="selected-preview">
           <h3>
-            Your World-changing Research Title: <strong>{selectedWord.word.toUpperCase()}</strong>
-            <NicenessScore score={selectedWord.niceness} />
+            Your World-changing Research Title:
           </h3>
           <MatchTypeBadge
             type={selectedWord.type}
@@ -263,9 +263,12 @@ function App() {
           />
           {selectedWord.indices && selectedWord.indices.length > 0 && (
             <div className="preview-title">
-              <HighlightedTitle title={results.searchedTitle} indices={selectedWord.indices} />
+              <HighlightedTitle name={selectedWord.word.toUpperCase()} title={results.searchedTitle} indices={selectedWord.indices} />
             </div>
           )}
+          <div className="preview-niceness">
+            "Niceness" score: <NicenessScore score={selectedWord.niceness} />
+          </div>
         </div>
       )}
 
@@ -320,6 +323,10 @@ function App() {
           )}
         </div>
       )}
+
+      <div className='credits'>
+        Made with ❤️ by <a href="https://maok.us" target='_blank'>Maokus</a>
+      </div>
 
     </div>
   )
