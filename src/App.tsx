@@ -1,9 +1,8 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import './App.css'
 import type { WordMatch, TitleInfo } from './matching'
 import {
   analyzeTitleTitle,
-  buildWordSet,
   findAllMatches
 } from './matching'
 
@@ -38,27 +37,8 @@ function NicenessScore({ score }: { score: number }) {
   )
 }
 
-// Match type badge
-function MatchTypeBadge({ type, components }: {
-  type: WordMatch['type']
-  components?: string[]
-}) {
-  if (type === 'exact') return null
-
-  if (type === 'compound' && components && components.length > 0) {
-    return (
-      <span className="match-badge compound">
-        {components.join(' + ')}
-      </span>
-    )
-  }
-
-  return null
-}
-
 interface SearchResults {
-  exact: WordMatch[]
-  compound: WordMatch[]
+  matches: WordMatch[]
   titleInfo: TitleInfo | null
   searchedTitle: string
 }
@@ -66,19 +46,15 @@ interface SearchResults {
 function App() {
   const [title, setTitle] = useState('')
   const [words, setWords] = useState<string[]>([])
-  const [wordSet, setWordSet] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [searching, setSearching] = useState(false)
   const [minLength, setMinLength] = useState(4)
   const [maxResults, setMaxResults] = useState(100)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedWord, setSelectedWord] = useState<WordMatch | null>(null)
-  const [includeCompounds, setIncludeCompounds] = useState(true)
-  const [activeTab, setActiveTab] = useState<'exact' | 'compound'>('exact')
 
   const [results, setResults] = useState<SearchResults>({
-    exact: [],
-    compound: [],
+    matches: [],
     titleInfo: null,
     searchedTitle: ''
   })
@@ -90,7 +66,6 @@ function App() {
       .then(text => {
         const wordList = text.split('\n').map(w => w.trim().toLowerCase()).filter(w => w.length > 0)
         setWords(wordList)
-        setWordSet(buildWordSet(wordList))
         setLoading(false)
       })
       .catch(err => {
@@ -103,8 +78,7 @@ function App() {
   const performSearch = useCallback(() => {
     if (!title.trim() || words.length === 0) {
       setResults({
-        exact: [],
-        compound: [],
+        matches: [],
         titleInfo: null,
         searchedTitle: ''
       })
@@ -118,34 +92,24 @@ function App() {
     setTimeout(() => {
       const titleInfo = analyzeTitleTitle(title)
 
-      const { exact, compound } = findAllMatches(
+      const matches = findAllMatches(
         titleInfo,
         words,
-        wordSet,
         {
           minLength,
           maxResults,
-          searchTerm,
-          includeCompounds
+          searchTerm
         }
       )
 
       setResults({
-        exact,
-        compound,
+        matches,
         titleInfo,
         searchedTitle: title
       })
       setSearching(false)
-
-      // Auto-select the best tab
-      if (exact.length > 0) {
-        setActiveTab('exact')
-      } else if (compound.length > 0) {
-        setActiveTab('compound')
-      }
     }, 10)
-  }, [title, words, wordSet, minLength, maxResults, searchTerm, includeCompounds])
+  }, [title, words, minLength, maxResults, searchTerm])
 
   // Handle Enter key
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -158,10 +122,7 @@ function App() {
     setSelectedWord(prev => prev?.word === match.word ? null : match)
   }, [])
 
-  // Get the current tab's matches
-  const currentMatches = useMemo(() => {
-    return activeTab === 'exact' ? results.exact : results.compound
-  }, [activeTab, results])
+  const currentMatches = results.matches
 
   if (loading) {
     return (
@@ -240,16 +201,6 @@ function App() {
             placeholder="Contains..."
           />
         </div>
-        <div className="control-group checkbox-group">
-          <label>
-            <input
-              type="checkbox"
-              checked={includeCompounds}
-              onChange={(e) => setIncludeCompounds(e.target.checked)}
-            />
-            Compound words
-          </label>
-        </div>
       </div>
 
       {selectedWord && results.titleInfo && (
@@ -257,10 +208,6 @@ function App() {
           <h3>
             Your World-changing Research Title:
           </h3>
-          <MatchTypeBadge
-            type={selectedWord.type}
-            components={selectedWord.components}
-          />
           {selectedWord.indices && selectedWord.indices.length > 0 && (
             <div className="preview-title">
               <HighlightedTitle name={selectedWord.word.toUpperCase()} title={results.searchedTitle} indices={selectedWord.indices} />
@@ -274,38 +221,21 @@ function App() {
 
       {results.searchedTitle && (
         <div className="results-section">
-          <div className="results-tabs">
-            <button
-              className={`tab ${activeTab === 'exact' ? 'active' : ''}`}
-              onClick={() => setActiveTab('exact')}
-            >
-              Exact ({results.exact.length})
-            </button>
-            <button
-              className={`tab ${activeTab === 'compound' ? 'active' : ''}`}
-              onClick={() => setActiveTab('compound')}
-              disabled={!includeCompounds}
-            >
-              Compound ({results.compound.length})
-            </button>
-          </div>
-
           <h2>
-            {currentMatches.length} {activeTab} matches
-            {currentMatches.length >= maxResults && activeTab === 'exact' && ` (limited to ${maxResults})`}
+            {currentMatches.length} matches
+            {currentMatches.length >= maxResults && ` (limited to ${maxResults})`}
           </h2>
 
           {currentMatches.length === 0 ? (
             <p className="no-results">
-              {activeTab === 'exact' && 'No exact matches found. Try a longer title or lower minimum length.'}
-              {activeTab === 'compound' && 'No compound words found.'}
+              No matches found. Try a longer title or lower minimum length.
             </p>
           ) : (
             <div className="word-grid">
               {currentMatches.map((match) => (
                 <button
-                  key={`${match.type}-${match.word}`}
-                  className={`word-card ${selectedWord?.word === match.word ? 'selected' : ''} ${match.type}`}
+                  key={match.word}
+                  className={`word-card ${selectedWord?.word === match.word ? 'selected' : ''}`}
                   onClick={() => handleWordClick(match)}
                 >
                   <div className="word-header">
@@ -313,10 +243,6 @@ function App() {
                     <NicenessScore score={match.niceness} />
                   </div>
                   <span className="length">{match.word.length} letters</span>
-                  <MatchTypeBadge
-                    type={match.type}
-                    components={match.components}
-                  />
                 </button>
               ))}
             </div>

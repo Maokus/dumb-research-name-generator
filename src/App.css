@@ -138,29 +138,6 @@ h1 {
   outline: 3px solid var(--muted);
 }
 
-.checkbox-group {
-  flex-direction: row;
-  gap: 1rem;
-  padding: 0.45rem 0.75rem;
-  border: 2px solid var(--ink);
-  box-shadow: 4px 4px 0 var(--muted);
-}
-
-.checkbox-group label {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.checkbox-group input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent-pink);
-  border: 2px solid var(--ink);
-}
-
 .selected-preview {
   border: 3px solid var(--ink);
   padding: 1rem;
@@ -285,60 +262,6 @@ h1 {
   text-transform: uppercase;
 }
 
-/* Match type badges */
-.match-badge {
-  display: inline-block;
-  font-size: 0.65rem;
-  padding: 0.2rem 0.55rem;
-  border: 2px solid var(--ink);
-  margin-top: 0.25rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  background: #fff;
-}
-
-.match-badge.compound {
-  background: var(--accent-yellow);
-}
-
-.match-badge.near {
-  background: var(--paper);
-}
-
-/* Results tabs */
-.results-tabs {
-  display: flex;
-  gap: 0.35rem;
-  margin-bottom: 0.7rem;
-  border-bottom: 3px solid var(--ink);
-}
-
-.tab {
-  padding: 0.45rem 0.8rem;
-  border: 3px solid var(--ink);
-  background: #fff;
-  font-size: 0.85rem;
-  font-weight: 800;
-  color: var(--ink);
-  cursor: pointer;
-  text-transform: uppercase;
-  box-shadow: 5px 5px 0 var(--accent-yellow);
-}
-
-.tab:hover:not(:disabled) {
-  transform: translate(-2px, -2px);
-}
-
-.tab.active {
-  background: var(--accent-pink);
-}
-
-.tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
 .results-section h2 {
   font-size: 1.05rem;
   color: var(--ink);
@@ -370,15 +293,6 @@ h1 {
 
 .word-card.selected {
   background: var(--accent-yellow);
-}
-
-/* Word card types */
-.word-card.compound {
-  border-left: 5px solid var(--accent-pink);
-}
-
-.word-card.near {
-  border-left: 5px solid var(--muted);
 }
 
 .word-header {

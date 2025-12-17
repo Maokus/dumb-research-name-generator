@@ -3,8 +3,6 @@ export interface WordMatch {
     word: string
     indices: number[]
     niceness: number
-    type: 'exact' | 'compound'
-    components?: string[] // For compound words
 }
 
 export interface TitleInfo {
@@ -168,92 +166,17 @@ export function calculateNiceness(titleInfo: TitleInfo, word: string, indices: n
 
 
 
-// Build a Set of valid words for O(1) lookup
-export function buildWordSet(words: string[]): Set<string> {
-    return new Set(words.map(w => w.toLowerCase()))
-}
-
-// Build new compound matches by stitching together two exact matches
-function generateCompoundMatches(
-    titleInfo: TitleInfo,
-    exactMatches: WordMatch[],
-    wordSet: Set<string>,
-    searchLower: string,
-    minWordLength: number,
-    maxResults: number,
-    minComponentLength: number = 3,
-    componentPoolSize: number = 80
-): WordMatch[] {
-    if (maxResults <= 0) return []
-
-    const usableMatches = exactMatches.filter(match => match.word.length >= minComponentLength)
-    if (usableMatches.length < 2) return []
-
-    const componentPool = usableMatches.slice(0, componentPoolSize)
-    const seen = new Set<string>()
-    const compounds: WordMatch[] = []
-    const maxCandidates = Math.max(maxResults * 3, componentPool.length)
-
-    for (let i = 0; i < componentPool.length; i++) {
-        const first = componentPool[i]
-        for (let j = 0; j < componentPool.length; j++) {
-            if (i === j) continue
-
-            const second = componentPool[j]
-            const combinedWord = first.word + second.word
-
-            if (combinedWord.length < minWordLength) continue
-            if (combinedWord.length > titleInfo.letters.length) continue
-            if (searchLower && !combinedWord.includes(searchLower)) continue
-            if (wordSet.has(combinedWord)) continue // Already a standalone dictionary word
-            if (seen.has(combinedWord)) continue
-
-            const indices = findWordInTitle(titleInfo, combinedWord)
-            if (!indices) continue
-
-            const niceness = calculateNiceness(titleInfo, combinedWord, indices) * 0.9 // gentle penalty for fabricated words
-
-            compounds.push({
-                word: combinedWord,
-                indices,
-                niceness: Math.round(niceness * 100) / 100,
-                type: 'compound',
-                components: [first.word, second.word]
-            })
-            seen.add(combinedWord)
-
-            if (compounds.length >= maxCandidates) break
-        }
-
-        if (compounds.length >= maxCandidates) break
-    }
-
-    return compounds
-        .sort((a, b) => {
-            if (b.niceness !== a.niceness) return b.niceness - a.niceness
-            if (b.word.length !== a.word.length) return b.word.length - a.word.length
-            return a.word.localeCompare(b.word)
-        })
-        .slice(0, maxResults)
-}
-
-
 // Main function to find all matches
 export function findAllMatches(
     titleInfo: TitleInfo,
     allWords: string[],
-    wordSet: Set<string>,
     options: {
         minLength: number
         maxResults: number
         searchTerm: string
-        includeCompounds: boolean
     }
-): {
-    exact: WordMatch[]
-    compound: WordMatch[]
-} {
-    const { minLength, maxResults, searchTerm, includeCompounds } = options
+): WordMatch[] {
+    const { minLength, maxResults, searchTerm } = options
     const searchLower = searchTerm.trim().toLowerCase()
     const allExactMatches: WordMatch[] = []
 
@@ -268,8 +191,7 @@ export function findAllMatches(
             allExactMatches.push({
                 word,
                 indices,
-                niceness,
-                type: 'exact'
+                niceness
             })
         }
     }
@@ -281,25 +203,5 @@ export function findAllMatches(
         return a.word.localeCompare(b.word)
     })
 
-    const exact = allExactMatches.slice(0, maxResults)
-    const exactWordSet = new Set(exact.map(m => m.word))
-
-    // Find compound words if enabled (exclude words already in exact matches)
-    let compound: WordMatch[] = []
-    if (includeCompounds) {
-        const compoundLimit = Math.max(1, Math.floor(maxResults / 2))
-        const minComponentLength = Math.max(2, Math.min(4, minLength))
-        const generated = generateCompoundMatches(
-            titleInfo,
-            allExactMatches,
-            wordSet,
-            searchLower,
-            minLength,
-            compoundLimit,
-            minComponentLength
-        )
-        compound = generated.filter(c => !exactWordSet.has(c.word))
-    }
-
-    return { exact, compound }
+    return allExactMatches.slice(0, maxResults)
 }
