@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { FiCopy, FiGithub, FiTwitter, FiGlobe } from 'react-icons/fi'
 import './App.css'
 import type { WordMatch, TitleInfo } from './matching'
 import {
@@ -52,12 +53,27 @@ function App() {
   const [maxResults, setMaxResults] = useState(100)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedWord, setSelectedWord] = useState<WordMatch | null>(null)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied'>('idle')
 
   const [results, setResults] = useState<SearchResults>({
     matches: [],
     titleInfo: null,
     searchedTitle: ''
   })
+
+  const copyResetRef = useRef<number | null>(null)
+
+  const clearCopyTimeout = useCallback(() => {
+    if (copyResetRef.current) {
+      window.clearTimeout(copyResetRef.current)
+      copyResetRef.current = null
+    }
+  }, [])
+
+  const resetCopyState = useCallback(() => {
+    clearCopyTimeout()
+    setCopyStatus('idle')
+  }, [clearCopyTimeout])
 
   // Load the word dictionary
   useEffect(() => {
@@ -87,6 +103,7 @@ function App() {
 
     setSearching(true)
     setSelectedWord(null)
+    resetCopyState()
 
     // Use setTimeout to allow UI to update before heavy computation
     setTimeout(() => {
@@ -120,9 +137,38 @@ function App() {
 
   const handleWordClick = useCallback((match: WordMatch) => {
     setSelectedWord(prev => prev?.word === match.word ? null : match)
-  }, [])
+    resetCopyState()
+  }, [resetCopyState])
+
+  useEffect(() => {
+    return () => {
+      resetCopyState()
+    }
+  }, [resetCopyState])
+
+  const handleCopy = useCallback(async () => {
+    if (!selectedWord || !results.searchedTitle) {
+      return
+    }
+
+    if (!navigator.clipboard) {
+      console.warn('Clipboard API not available in this browser')
+      return
+    }
+
+    try {
+      const textToCopy = `${selectedWord.word.toUpperCase()}: ${results.searchedTitle}`
+      await navigator.clipboard.writeText(textToCopy)
+      clearCopyTimeout()
+      setCopyStatus('copied')
+      copyResetRef.current = window.setTimeout(() => setCopyStatus('idle'), 2000)
+    } catch (error) {
+      console.error('Failed to copy text', error)
+    }
+  }, [selectedWord, results.searchedTitle, clearCopyTimeout])
 
   const currentMatches = results.matches
+  const showSelectedPreview = Boolean(results.searchedTitle && currentMatches.length > 0)
 
   if (loading) {
     return (
@@ -203,19 +249,42 @@ function App() {
         </div>
       </div>
 
-      {selectedWord && results.titleInfo && (
-        <div className="selected-preview">
-          <h3>
-            Your World-changing Research Title:
-          </h3>
-          {selectedWord.indices && selectedWord.indices.length > 0 && (
-            <div className="preview-title">
-              <HighlightedTitle name={selectedWord.word.toUpperCase()} title={results.searchedTitle} indices={selectedWord.indices} />
-            </div>
-          )}
-          <div className="preview-niceness">
-            "Niceness" score: <NicenessScore score={selectedWord.niceness} />
+      {showSelectedPreview && (
+        <div className={`selected-preview ${!selectedWord ? 'is-empty' : ''}`}>
+          <div className="selected-preview-header">
+            <h3>
+              Your World-changing Research Title
+            </h3>
+            <button
+              className="copy-button"
+              onClick={handleCopy}
+              disabled={!selectedWord}
+              type="button"
+              aria-live="polite"
+            >
+              <FiCopy />
+              {copyStatus === 'copied' ? 'Copied!' : 'Copy'}
+            </button>
           </div>
+
+          {selectedWord ? (
+            <>
+              {selectedWord.indices && selectedWord.indices.length > 0 && (
+                <div className="preview-title">
+                  <HighlightedTitle
+                    name={selectedWord.word.toUpperCase()}
+                    title={results.searchedTitle}
+                    indices={selectedWord.indices}
+                  />
+                </div>
+              )}
+              <div className="preview-niceness">
+                "Niceness" score: <NicenessScore score={selectedWord.niceness} />
+              </div>
+            </>
+          ) : (
+            <p className="preview-placeholder">Select a word to preview it here.</p>
+          )}
         </div>
       )}
 
@@ -251,7 +320,38 @@ function App() {
       )}
 
       <div className='credits'>
-        Made with ❤️ by <a href="https://maok.us" target='_blank'>Maokus</a>
+        <span>
+          Made with ❤️ by <a href="https://maok.us" target='_blank' rel="noreferrer">Maokus</a>
+        </span>
+        <div className="credits-links">
+          <a
+            href="https://maok.us"
+            target="_blank"
+            rel="noreferrer"
+            className="social-button"
+            aria-label="Visit Maokus website"
+          >
+            <FiGlobe />
+          </a>
+          <a
+            href="https://x.com/KarosMao"
+            target="_blank"
+            rel="noreferrer"
+            className="social-button"
+            aria-label="Follow Maokus on Twitter"
+          >
+            <FiTwitter />
+          </a>
+          <a
+            href="https://github.com/Maokus"
+            target="_blank"
+            rel="noreferrer"
+            className="social-button"
+            aria-label="View the GitHub profile"
+          >
+            <FiGithub />
+          </a>
+        </div>
       </div>
 
     </div>
